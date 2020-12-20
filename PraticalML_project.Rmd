@@ -1,0 +1,149 @@
+---
+title: "Use weightlifting exercise datasets to predict how they will exercise"
+subtitle    : Coursera's Practical Machine Learning Final Project
+author      : Shengchu Wang
+output:
+  pdf_document: default
+  html_document:
+    keep_md: yes
+  word_document: default
+---
+
+## Background
+### Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Goal
+### The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+- Class A, exactly according to the specification 
+- Class B, throwing the elbows to the front.
+- Class C, lifting the dumbbell only halfway.
+- Class D, lowering the dumbbell only halfway.
+- Class E, and throwing the hips to the front. 
+
+## Data Process
+### Load library
+```{r echo = TRUE}
+library(caret)
+library(tidyverse)
+library(corrplot)
+
+```
+
+### Input training and testing datasets and training data summary
+```{r echo = TRUE, cache = TRUE}
+tPath <- "D:/00-OneDrive/GitHub/03-Coursera/PraticalML"
+setwd(tPath)
+set.seed(12521)
+testing <- read.csv("pml-testing.csv")
+training <- read.csv("pml-training.csv")
+training$classe <- as.factor(training$classe)
+dim(training)
+# names(training)
+table(training$classe)
+
+```
+
+### Delete the columns with high missing rate in the training data set
+```{r echo = TRUE, cache = TRUE}
+training <- training[colMeans(is.na(training)) <= 0.6] 
+dim(training)
+missRate <- training %>%
+  gather(col, value) %>%
+  group_by(col) %>%
+  summarize(missing_rate = mean(is.na(value)))
+missRateD <- as.data.frame(missRate)
+summary(missRateD)
+
+```
+
+### Now all columns in the training data set have no missing data
+
+### Remove non-predictor variables and near zero variables
+```{r echo = TRUE, cache = TRUE}
+names(training)[1:10]
+training <- training[, -c(1:7)]
+dim(training)
+near0var <- nearZeroVar(training)
+training <- training[, -near0var]
+dim(training)
+
+```
+
+### There are `r ncol(training)` variables left in the training data set
+
+### Variable correlation analyis
+```{r echo = TRUE, cache = TRUE, fig.height = 10, fig.width = 10}
+corrD <- cor(training[, -ncol(training)])
+corrplot(corrD, order = "FPC", method = "circle", tl.cex = 0.7, tl.col = "black")
+highCorr = findCorrelation(corrD, cutoff = 0.8)
+highCorrNm <- names(training)[highCorr]
+
+```
+
+### The high correlation variable list
+#### `r highCorrNm`
+
+## Build Prediction Model
+### Split data into train and valid
+```{r echo = TRUE, cache = TRUE}
+inTrain <- createDataPartition(training$classe, p = 0.6, list = FALSE)
+train <- training[inTrain, ]
+valid <- training[-inTrain, ]
+msg <- paste0("train has ", nrow(train), " rows and valid has ", nrow(valid), " rows")
+print(msg)
+
+```
+
+### Random Forest prediction modeling
+```{r echo = TRUE, cache = TRUE}
+rfControl <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+rfMD <- train(classe ~ ., data=train, method = "rf", trControl = rfControl)
+rfMD$finalModel
+rfPred <- predict(rfMD, newdata = valid)
+rfconfus <- confusionMatrix(rfPred, valid$classe)
+rfconfus
+rfAccuracy <- round(rfconfus$overall[1], 4)
+rfErrRate <- 1.0-rfAccuracy
+plot(rfMD)
+
+```
+
+### The out of sample accuracy is high, therefore the out of sample error rate is low. 
+### Accuracy = `r rfAccuracy` and Out of sample error = `r rfErrRate`
+
+### GBM prediction modeling
+```{r echo = TRUE, cache = TRUE}
+GBMcontrol <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+GBMmd  <- train(classe ~ ., data=train, method = "gbm", trControl = GBMcontrol, verbose = FALSE)
+GBMmd$finalModel
+print(GBMmd)
+GBMpred <- predict(GBMmd, newdata = valid)
+GBMconfus <- confusionMatrix(GBMpred, valid$classe)
+GBMconfus
+GBMaccuracy <- round(GBMconfus$overall[1], 4)
+GBMerrRate <- 1.0-GBMaccuracy
+plot(GBMmd)
+
+```
+
+### Compared with the random forest method, GBS has lower out-of-sample accuracy, so the out-of-sample error rate is higher. 
+### Accuracy = `r GBMaccuracy` and Out of sample error = `r GBMerrRate`
+
+## Predict the test data
+### Therefore, the random forest prediction model is our choice for final prediction
+```{r echo = TRUE, cache = TRUE}
+finalPred <- predict(rfMD, newdata = testing)
+finalPred
+
+```
+
+### End of the report
+
+-
+-
+-
+
+
+
+
+
